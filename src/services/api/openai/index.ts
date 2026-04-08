@@ -3,20 +3,38 @@ import type { SystemPrompt } from '../../../utils/systemPromptType.js'
 import type { Message, StreamEvent, SystemAPIErrorMessage, AssistantMessage } from '../../../types/message.js'
 import type { Tools } from '../../../Tool.js'
 import { getOpenAIClient } from './client.js'
-import { anthropicMessagesToOpenAI } from './convertMessages.js'
-import { anthropicToolsToOpenAI, anthropicToolChoiceToOpenAI } from './convertTools.js'
+import {
+  anthropicMessagesToOpenAI,
+  anthropicMessagesToOpenAIResponses,
+} from './convertMessages.js'
+import {
+  anthropicToolsToOpenAI,
+  anthropicToolsToOpenAIResponses,
+  anthropicToolChoiceToOpenAI,
+  anthropicToolChoiceToOpenAIResponses,
+} from './convertTools.js'
 import { adaptOpenAIStreamToAnthropic } from './streamAdapter.js'
+import { adaptOpenAIResponsesStreamToAnthropic } from './responsesStreamAdapter.js'
 import { resolveOpenAIModel } from './modelMapping.js'
 import { normalizeMessagesForAPI } from '../../../utils/messages.js'
 import { toolToAPISchema } from '../../../utils/api.js'
 import { getEmptyToolPermissionContext } from '../../../Tool.js'
 import { logForDebugging } from '../../../utils/debug.js'
+import { isEnvTruthy } from '../../../utils/envUtils.js'
 import type { Options } from '../claude.js'
 import { randomUUID } from 'crypto'
 import {
   createAssistantAPIErrorMessage,
   normalizeContentFromAPI,
 } from '../../../utils/messages.js'
+
+function shouldUseResponsesAPI(model: string): boolean {
+  if (process.env.OPENAI_USE_RESPONSES_API != null) {
+    return isEnvTruthy(process.env.OPENAI_USE_RESPONSES_API)
+  }
+
+  return /^gpt-5(?:[.-]|$)/i.test(model)
+}
 
 /**
  * OpenAI-compatible query path. Converts Anthropic-format messages/tools to
@@ -61,11 +79,6 @@ export async function* queryModelOpenAI(
       },
     )
 
-    // 4. Convert messages and tools to OpenAI format
-    const openaiMessages = anthropicMessagesToOpenAI(messagesForAPI, systemPrompt)
-    const openaiTools = anthropicToolsToOpenAI(standardTools)
-    const openaiToolChoice = anthropicToolChoiceToOpenAI(options.toolChoice)
-
     // 5. Get client and make streaming request
     const client = getOpenAIClient({
       maxRetries: 0,
@@ -73,33 +86,78 @@ export async function* queryModelOpenAI(
       source: options.querySource,
     })
 
-    logForDebugging(`[OpenAI] Calling model=${openaiModel}, messages=${openaiMessages.length}, tools=${openaiTools.length}`)
+    const adaptedStream = shouldUseResponsesAPI(openaiModel)
+      ? await (async () => {
+          const { input, instructions } = anthropicMessagesToOpenAIResponses(
+            messagesForAPI,
+            systemPrompt,
+          )
+          const openaiTools = anthropicToolsToOpenAIResponses(standardTools)
+          const openaiToolChoice = anthropicToolChoiceToOpenAIResponses(
+            options.toolChoice,
+          )
 
-    // 6. Call OpenAI API with streaming
-    const stream = await client.chat.completions.create(
-      {
-        model: openaiModel,
-        messages: openaiMessages,
-        ...(openaiTools.length > 0 && {
-          tools: openaiTools,
-          ...(openaiToolChoice && { tool_choice: openaiToolChoice }),
-        }),
-        stream: true,
-        stream_options: { include_usage: true },
-        ...(options.temperatureOverride !== undefined && {
-          temperature: options.temperatureOverride,
-        }),
-      },
-      {
-        signal,
-      },
-    )
+          logForDebugging(
+            `[OpenAI] Calling Responses API model=${openaiModel}, inputItems=${input.length}, tools=${openaiTools.length}`,
+          )
 
-    // 7. Convert OpenAI stream to Anthropic events, then process into
+          const stream = await client.responses.create(
+            {
+              model: openaiModel,
+              input,
+              ...(instructions ? { instructions } : {}),
+              ...(openaiTools.length > 0 && {
+                tools: openaiTools,
+                ...(openaiToolChoice && { tool_choice: openaiToolChoice }),
+              }),
+              stream: true,
+              ...(options.temperatureOverride !== undefined && {
+                temperature: options.temperatureOverride,
+              }),
+            },
+            {
+              signal,
+            },
+          )
+
+          return adaptOpenAIResponsesStreamToAnthropic(stream, openaiModel)
+        })()
+      : await (async () => {
+          const openaiMessages = anthropicMessagesToOpenAI(
+            messagesForAPI,
+            systemPrompt,
+          )
+          const openaiTools = anthropicToolsToOpenAI(standardTools)
+          const openaiToolChoice = anthropicToolChoiceToOpenAI(options.toolChoice)
+
+          logForDebugging(
+            `[OpenAI] Calling Chat Completions model=${openaiModel}, messages=${openaiMessages.length}, tools=${openaiTools.length}`,
+          )
+
+          const stream = await client.chat.completions.create(
+            {
+              model: openaiModel,
+              messages: openaiMessages,
+              ...(openaiTools.length > 0 && {
+                tools: openaiTools,
+                ...(openaiToolChoice && { tool_choice: openaiToolChoice }),
+              }),
+              stream: true,
+              stream_options: { include_usage: true },
+              ...(options.temperatureOverride !== undefined && {
+                temperature: options.temperatureOverride,
+              }),
+            },
+            {
+              signal,
+            },
+          )
+
+          return adaptOpenAIStreamToAnthropic(stream, openaiModel)
+        })()
+
+    // 6. Convert OpenAI stream to Anthropic events, then process into
     //    AssistantMessage + StreamEvent (matching the Anthropic path behavior)
-    const adaptedStream = adaptOpenAIStreamToAnthropic(stream, openaiModel)
-
-    // Accumulate content blocks and usage, same as the Anthropic path in claude.ts
     const contentBlocks: Record<number, any> = {}
     let partialMessage: any = undefined
     let usage = {

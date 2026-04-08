@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { anthropicMessagesToOpenAI } from '../convertMessages.js'
+import {
+  anthropicMessagesToOpenAI,
+  anthropicMessagesToOpenAIResponses,
+} from '../convertMessages.js'
 import type { UserMessage, AssistantMessage } from '../../../../types/message.js'
 
 // Helpers to create internal-format messages
@@ -153,5 +156,69 @@ describe('anthropicMessagesToOpenAI', () => {
     expect(result[2].role).toBe('assistant')
     expect((result[2] as any).tool_calls).toBeDefined()
     expect(result[3].role).toBe('tool')
+  })
+})
+
+describe('anthropicMessagesToOpenAIResponses', () => {
+  test('moves system prompt to instructions', () => {
+    const result = anthropicMessagesToOpenAIResponses(
+      [makeUserMsg('hello')],
+      ['You are helpful.'] as any,
+    )
+
+    expect(result.instructions).toBe('You are helpful.')
+    expect(result.input).toEqual([{
+      type: 'message',
+      role: 'user',
+      content: 'hello',
+    }])
+  })
+
+  test('preserves assistant tool call as function_call item', () => {
+    const result = anthropicMessagesToOpenAIResponses(
+      [makeAssistantMsg([
+        { type: 'text', text: 'Running tool' },
+        {
+          type: 'tool_use' as const,
+          id: 'toolu_123',
+          name: 'bash',
+          input: { command: 'ls' },
+        },
+      ])],
+      [] as any,
+    )
+
+    expect(result.input).toEqual([
+      {
+        type: 'message',
+        role: 'assistant',
+        content: 'Running tool',
+      },
+      {
+        type: 'function_call',
+        call_id: 'toolu_123',
+        name: 'bash',
+        arguments: '{"command":"ls"}',
+      },
+    ])
+  })
+
+  test('preserves tool result as function_call_output item', () => {
+    const result = anthropicMessagesToOpenAIResponses(
+      [makeUserMsg([
+        {
+          type: 'tool_result' as const,
+          tool_use_id: 'toolu_123',
+          content: '{"ok":true}',
+        },
+      ])],
+      [] as any,
+    )
+
+    expect(result.input).toEqual([{
+      type: 'function_call_output',
+      call_id: 'toolu_123',
+      output: '{"ok":true}',
+    }])
   })
 })

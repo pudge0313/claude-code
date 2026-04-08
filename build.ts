@@ -40,19 +40,28 @@ if (!result.success) {
 const files = await readdir(outdir);
 const IMPORT_META_REQUIRE = "var __require = import.meta.require;";
 const COMPAT_REQUIRE = `var __require = typeof import.meta.require === "function" ? import.meta.require : (await import("module")).createRequire(import.meta.url);`;
+const BUN_DOLLAR_DESTRUCTURE = "var {$ } = globalThis.Bun;";
+const COMPAT_BUN_DOLLAR = `var $ = typeof globalThis.Bun?.$ === "function" ? globalThis.Bun.$.bind(globalThis.Bun) : (() => { throw new Error("This command requires the Bun runtime."); });`;
 
 let patched = 0;
 for (const file of files) {
-    if (!file.endsWith(".js")) continue;
-    const filePath = join(outdir, file);
-    const content = await readFile(filePath, "utf-8");
-    if (content.includes(IMPORT_META_REQUIRE)) {
-        await writeFile(
-            filePath,
-            content.replace(IMPORT_META_REQUIRE, COMPAT_REQUIRE),
-        );
-        patched++;
-    }
+  if (!file.endsWith(".js")) continue;
+  const filePath = join(outdir, file);
+  const content = await readFile(filePath, "utf-8");
+  let nextContent = content;
+  if (nextContent.includes(IMPORT_META_REQUIRE)) {
+    nextContent = nextContent.replace(IMPORT_META_REQUIRE, COMPAT_REQUIRE);
+  }
+  if (nextContent.includes(BUN_DOLLAR_DESTRUCTURE)) {
+    nextContent = nextContent.replace(
+      BUN_DOLLAR_DESTRUCTURE,
+      COMPAT_BUN_DOLLAR,
+    );
+  }
+  if (nextContent !== content) {
+    await writeFile(filePath, nextContent);
+    patched++;
+  }
 }
 
 console.log(

@@ -28,6 +28,17 @@ export const WINDOWS_REGISTRY_KEY_PATH_HKCU =
 /** Windows registry value name containing the JSON settings blob. */
 export const WINDOWS_REGISTRY_VALUE_NAME = 'Settings'
 
+/**
+ * Best-effort path to the Windows registry CLI.
+ *
+ * Bun on Windows can be unreliable when spawning bare `reg` from PATH during
+ * early startup. Prefer the System32 absolute path when available.
+ */
+export function getWindowsRegExecutable(): string {
+  const systemRoot = process.env.SystemRoot ?? process.env.WINDIR
+  return systemRoot ? join(systemRoot, 'System32', 'reg.exe') : 'reg.exe'
+}
+
 /** Path to macOS plutil binary. */
 export const PLUTIL_PATH = '/usr/bin/plutil'
 

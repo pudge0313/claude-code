@@ -11,6 +11,8 @@
  */
 
 import { $ } from "bun";
+import { readdir, readFile } from "fs/promises";
+import { join } from "path";
 
 const DIVIDER = "─".repeat(60);
 
@@ -21,6 +23,26 @@ interface Metric {
 }
 
 const metrics: Metric[] = [];
+
+async function collectTypeScriptFiles(dir: string): Promise<string[]> {
+	const entries = await readdir(dir, { withFileTypes: true });
+	const files = await Promise.all(
+		entries.map(async (entry) => {
+			const fullPath = join(dir, entry.name);
+			if (entry.isDirectory()) {
+				if (entry.name === "node_modules") {
+					return [];
+				}
+				return collectTypeScriptFiles(fullPath);
+			}
+			if (entry.isFile() && (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))) {
+				return [fullPath];
+			}
+			return [];
+		}),
+	);
+	return files.flat();
+}
 
 function add(label: string, value: string | number, status: Metric["status"] = "info") {
 	metrics.push({ label, value, status });
@@ -43,12 +65,15 @@ function icon(status: Metric["status"]): string {
 // 1. 代码规模
 // ---------------------------------------------------------------------------
 async function checkCodeSize() {
-	const tsFiles = await $`find src -name '*.ts' -o -name '*.tsx' | grep -v node_modules`.text();
-	const fileCount = tsFiles.trim().split("\n").filter(Boolean).length;
+	const tsFiles = await collectTypeScriptFiles("src");
+	const fileCount = tsFiles.length;
 	add("TypeScript 文件数", fileCount, "info");
 
-	const loc = await $`find src -name '*.ts' -o -name '*.tsx' | grep -v node_modules | xargs wc -l | tail -1`.text();
-	const totalLines = loc.trim().split(/\s+/)[0] ?? "?";
+	const contents = await Promise.all(tsFiles.map((file) => readFile(file, "utf8")));
+	const totalLines = contents.reduce(
+		(sum, content) => sum + content.split(/\r?\n/).length,
+		0,
+	);
 	add("总代码行数 (src/)", totalLines, "info");
 }
 

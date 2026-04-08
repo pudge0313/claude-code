@@ -462,7 +462,7 @@ const call: LocalJSXCommandCall = async (onDone, context, args) => {
 export default {
   type: 'local-jsx',
   name: 'ultraplan',
-  description: `~10–30 min · Claude Code on the web drafts an advanced plan you can edit and approve. See ${CCR_TERMS_URL}`,
+  description: `约10到30分钟·Web版Claude Code会起草一个可供你编辑和批准的高级计划。参见${CCR_TERMS_URL}`,
   argumentHint: '<prompt>',
   isEnabled: () => (process.env.USER_TYPE) === 'ant',
   load: () => Promise.resolve({
