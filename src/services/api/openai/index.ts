@@ -159,7 +159,7 @@ export async function* queryModelOpenAI(
     // 6. Convert OpenAI stream to Anthropic events, then process into
     //    AssistantMessage + StreamEvent (matching the Anthropic path behavior)
     const contentBlocks: Record<number, any> = {}
-    let partialMessage: any = undefined
+    let partialMessage: any
     let usage = {
       input_tokens: 0,
       output_tokens: 0,
