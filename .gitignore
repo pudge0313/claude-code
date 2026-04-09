@@ -9,3 +9,5 @@ coverage
 *.suo
 *.lock
 src/utils/vendor/
+_gen_map.py
+test.txt
