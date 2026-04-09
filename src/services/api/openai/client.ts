@@ -13,6 +13,12 @@ import { isEnvTruthy } from '../../utils/envUtils.js'
 
 let cachedClient: OpenAI | null = null
 
+/** Runtime overrides from /profile command, takes priority over env vars */
+let profileOverrides: {
+  apiKey?: string
+  baseURL?: string
+} | null = null
+
 export function getOpenAIClient(options?: {
   maxRetries?: number
   fetchOverride?: typeof fetch
@@ -20,8 +26,9 @@ export function getOpenAIClient(options?: {
 }): OpenAI {
   if (cachedClient) return cachedClient
 
-  const apiKey = process.env.OPENAI_API_KEY || ''
-  const baseURL = process.env.OPENAI_BASE_URL
+  // Profile overrides take priority over environment variables
+  const apiKey = (profileOverrides && profileOverrides.apiKey) ? profileOverrides.apiKey : (process.env.OPENAI_API_KEY || '')
+  const baseURL = (profileOverrides && profileOverrides.baseURL) ? profileOverrides.baseURL : process.env.OPENAI_BASE_URL
 
   const client = new OpenAI({
     apiKey,
@@ -45,4 +52,21 @@ export function getOpenAIClient(options?: {
 /** Clear the cached client (useful when env vars change). */
 export function clearOpenAIClientCache(): void {
   cachedClient = null
+}
+
+/**
+ * Set profile-level overrides for base URL and API key.
+ * Call this before clearing cache to switch endpoints at runtime.
+ */
+export function setOpenAIProfileOverrides(overrides: {
+  apiKey?: string
+  baseURL?: string
+} | null): void {
+  profileOverrides = overrides
+  clearOpenAIClientCache()
+}
+
+/** Get current profile override info (for display purposes) */
+export function getOpenAIProfileOverrides() {
+  return profileOverrides
 }

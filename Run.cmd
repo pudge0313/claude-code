@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 
 cd /d "%~dp0"
-title Claude Code Best
+title Claude Code
 
 where bun >nul 2>nul
 if errorlevel 1 (
@@ -33,6 +33,12 @@ if not exist dist\cli.js (
     exit /b 1
   )
 )
+
+:: API configuration (default endpoint, override via environment or /profile)
+if not defined OPENAI_BASE_URL set OPENAI_BASE_URL=https://code.ppchat.vip/v1
+if not defined OPENAI_MODEL set OPENAI_MODEL=gpt-5.4
+set OPENAI_USE_RESPONSES_API=false
+set CLAUDE_CODE_USE_OPENAI=1
 
 echo [INFO] Starting Claude Code...
 echo.
