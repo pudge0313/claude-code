@@ -29,7 +29,7 @@ import { readJSONLFile } from '../../utils/json.js'
 import { logError } from '../../utils/log.js'
 import { sleep } from '../../utils/sleep.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
-import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
+import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
 import { isOAuthTokenExpired } from '../oauth/client.js'
 import { stripProtoFields } from './index.js'
 import { type EventMetadata, to1PEventFormat } from './metadata.js'
@@ -109,6 +109,25 @@ export class FirstPartyEventLoggingExporter implements LogRecordExporter {
       schedule?: (fn: () => Promise<void>, delayMs: number) => () => void
     } = {},
   ) {
+    if (isEssentialTrafficOnly() || process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
+      this.endpoint = ''
+      this.timeout = options.timeout || 10000
+      this.maxBatchSize = options.maxBatchSize || 200
+      this.skipAuth = options.skipAuth ?? true
+      this.batchDelayMs = options.batchDelayMs || 100
+      this.baseBackoffDelayMs = options.baseBackoffDelayMs || 500
+      this.maxBackoffDelayMs = options.maxBackoffDelayMs || 30000
+      this.maxAttempts = 0
+      this.isKilled = () => true
+      this.schedule =
+        options.schedule ??
+        ((fn, ms) => {
+          const t = setTimeout(fn, ms)
+          return () => clearTimeout(t)
+        })
+      return
+    }
+
     // Default: prod, except when ANTHROPIC_BASE_URL is explicitly staging.
     // Overridable via tengu_1p_event_batch_config.baseUrl.
     const baseUrl =
@@ -308,6 +327,11 @@ export class FirstPartyEventLoggingExporter implements LogRecordExporter {
     resultCallback: (result: ExportResult) => void,
   ): Promise<void> {
     try {
+      if (isEssentialTrafficOnly() || process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
+        resultCallback({ code: ExportResultCode.SUCCESS })
+        return
+      }
+
       // Filter for event logs only (by scope name)
       const eventLogs = logs.filter(
         log =>

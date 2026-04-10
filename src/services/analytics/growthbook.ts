@@ -420,6 +420,9 @@ function syncRemoteEvalToDisk(): void {
  * Check if GrowthBook operations should be enabled
  */
 function isGrowthBookEnabled(): boolean {
+  if (process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
+    return false
+  }
   // 适配器模式：有自定义服务器配置时直接启用
   if (process.env.CLAUDE_GB_ADAPTER_URL && process.env.CLAUDE_GB_ADAPTER_KEY) {
     return true

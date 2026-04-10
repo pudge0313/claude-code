@@ -20,7 +20,7 @@ import { getFsImplementation } from '../fsOperations.js'
 import { logError } from '../log.js'
 import { sleep } from '../sleep.js'
 import { jsonStringify, writeFileSync_DEPRECATED } from '../slowOperations.js'
-import { getBinaryName, getPlatform } from './installer.js'
+import { isEssentialTrafficOnly } from '../privacyLevel.js'
 
 const GCS_BUCKET_URL =
   'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases'
@@ -30,6 +30,10 @@ export const ARTIFACTORY_REGISTRY_URL =
 export async function getLatestVersionFromArtifactory(
   tag: string = 'latest',
 ): Promise<string> {
+  if (isEssentialTrafficOnly() || process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
+    throw new Error('Native installer version checks are disabled in enterprise-safe mode')
+  }
+
   const startTime = Date.now()
   const { stdout, code, stderr } = await execFileNoThrowWithCwd(
     'npm',
@@ -76,6 +80,10 @@ export async function getLatestVersionFromBinaryRepo(
   baseUrl: string,
   authConfig?: { auth: { username: string; password: string } },
 ): Promise<string> {
+  if (isEssentialTrafficOnly() || process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
+    throw new Error('Native installer downloads are disabled in enterprise-safe mode')
+  }
+
   const startTime = Date.now()
   try {
     const response = await axios.get(`${baseUrl}/${channel}`, {
@@ -112,6 +120,10 @@ export async function getLatestVersionFromBinaryRepo(
 export async function getLatestVersion(
   channelOrVersion: string,
 ): Promise<string> {
+  if (isEssentialTrafficOnly() || process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
+    throw new Error('Native installer version resolution is disabled in enterprise-safe mode')
+  }
+
   // Direct version - match internal format too (e.g. 1.0.30-dev.shaf4937ce)
   if (/^v?\d+\.\d+\.\d+(-\S+)?$/.test(channelOrVersion)) {
     const normalized = channelOrVersion.startsWith('v')
