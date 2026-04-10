@@ -8,24 +8,25 @@ import { useAppState, useSetAppState } from '../../state/AppState.js';
 import type { LocalJSXCommandCall } from '../../types/command.js';
 import {
   loadProfiles,
-  setActiveProfile,
-  getActiveProfile,
-  upsertProfile,
-  deleteProfile,
-  type Profile as ProfileType,
+  setActiveChannel,
+  getActiveChannel,
+  getChannelByModel,
+  upsertChannel,
+  deleteChannel,
+  type ModelChannel,
 } from '../../utils/profile/profiles.js';
 import {
   setOpenAIProfileOverrides,
   getOpenAIProfileOverrides,
 } from '../../services/api/openai/client.js';
 
-/** Show current profile info */
-function ShowCurrentProfile({
+/** Show current model channel info */
+function ShowCurrentChannel({
   onDone
 }: {
   onDone: (result?: string, options?: { display?: CommandResultDisplay }) => void;
 }) {
-  const active = getActiveProfile();
+  const active = getActiveChannel();
   const overrides = getOpenAIProfileOverrides();
 
   React.useEffect(() => {
@@ -35,11 +36,11 @@ function ShowCurrentProfile({
         ? `${active.apiKey.slice(0, 6)}...${active.apiKey.slice(-4)}`
         : '****';
       onDone(
-        `Active profile: ${chalk.bold(active.name)}\n` +
+        `Current channel: ${chalk.bold(active.label)}\n` +
+        `  Model:  ${chalk.bold(active.model)}\n` +
         `  URL:    ${active.baseUrl}\n` +
-        `  Model:  ${active.model}\n` +
         `  Key:    ${maskedKey}` +
-        (overrides ? chalk.dim(' (profile override)') : ''),
+        (overrides ? chalk.dim(' (runtime override active)') : ''),
         { display: 'system' }
       );
     } else if (overrides) {
@@ -47,44 +48,43 @@ function ShowCurrentProfile({
         ? `${overrides.apiKey.slice(0, 6)}...${overrides.apiKey.slice(-4)}`
         : '****';
       onDone(
-        `Using custom endpoint (no named profile)\n` +
+        `Using custom endpoint (no named channel)\n` +
         `  URL: ${overrides.baseURL ?? '(env var)'}\n` +
         `  Key: ${maskedKey}`,
         { display: 'system' }
       );
     } else {
-      onDone('No active profile. Using environment variables for API configuration.', { display: 'system' });
+      onDone('No active channel. Using environment variables for API configuration.', { display: 'system' });
     }
   }, [onDone]);
 
   return null;
 }
 
-/** List all available profiles */
-function ListProfiles({
+/** List all available model channels */
+function ListChannels({
   onDone
 }: {
   onDone: (result?: string, options?: { display?: CommandResultDisplay }) => void;
 }) {
   const config = loadProfiles();
-  const profiles = config.profiles || [];
-  const activeName = config.activeProfile;
+  const channels = config.channels || [];
+  const activeModel = config.activeModel;
 
   React.useEffect(() => {
-    if (profiles.length === 0) {
-      onDone('No profiles configured. Use /profile add <name> to create one.', { display: 'system' });
+    if (channels.length === 0) {
+      onDone('No model channels configured. Use /profile add to create one.', { display: 'system' });
       return;
     }
 
-    let output = 'Available profiles:\n';
-    for (const p of profiles) {
-      const isActive = p.name === activeName ? chalk.green(' [active]') : '';
-      const maskedKey = p.apiKey.length > 8
-        ? `${p.apiKey.slice(0, 6)}...${p.apiKey.slice(-4)}`
+    let output = 'Available model channels:\n';
+    for (const ch of channels) {
+      const isActive = ch.model === activeModel ? chalk.green(' [active]') : '';
+      const maskedKey = ch.apiKey.length > 8
+        ? `${ch.apiKey.slice(0, 6)}...${ch.apiKey.slice(-4)}`
         : '****';
-      output += `  ${chalk.bold(p.name)}${isActive}\n`;
-      output += `    URL:   ${p.baseUrl}\n`;
-      output += `    Model: ${p.model}\n`;
+      output += `  ${chalk.bold(ch.model)} (${ch.label})${isActive}\n`;
+      output += `    URL:   ${ch.baseUrl}\n`;
       output += `    Key:   ${maskedKey}\n`;
     }
     onDone(output.trim(), { display: 'system' });
@@ -94,14 +94,14 @@ function ListProfiles({
 }
 
 /**
- * Parse add/delete subcommand args.
- * Format: /profile add name url api_key model
- *         /profile delete name
+ * Parse subcommand args.
+ * Format: /profile add <model> <label> <base_url> <api_key>
+ *         /profile delete <model>
  * Returns null if not a subcommand.
  */
 function parseSubcommand(args: string): {
   action: string
-  name: string
+  model: string
   rest: string[]
 } | null {
   const parts = args.trim().split(/\s+/);
@@ -110,9 +110,47 @@ function parseSubcommand(args: string): {
   }
   return {
     action: parts[0] === 'del' || parts[0] === 'rm' ? 'delete' : parts[0] === 'ls' ? 'list' : parts[0],
-    name: parts[1] || '',
+    model: parts[1] || '',
     rest: parts.slice(2),
   };
+}
+
+/**
+ * Apply a model channel switch — updates both runtime overrides and AppState.
+ * Shared between interactive picker and direct model name switch.
+ */
+function applyChannelSwitch(
+  channel: ModelChannel,
+  setAppState: (f: (prev: any) => any) => void,
+): string {
+  // 1. Persist active channel
+  setActiveChannel(channel.model);
+
+  // 2. Update OpenAI client overrides (baseURL + apiKey)
+  setOpenAIProfileOverrides({
+    apiKey: channel.apiKey,
+    baseURL: channel.baseUrl,
+  });
+
+  // 3. Set model via environment variable (resolveOpenAIModel picks this up)
+  process.env.OPENAI_MODEL = channel.model;
+
+  // 4. Update AppState to keep model in sync
+  setAppState(prev => ({
+    ...prev,
+    mainLoopModel: channel.model,
+    mainLoopModelForSession: null,
+  }));
+
+  // Build display message
+  const maskedKey = channel.apiKey.length > 8
+    ? `${channel.apiKey.slice(0, 6)}...${channel.apiKey.slice(-4)}`
+    : '****';
+
+  return `Switched to channel ${chalk.bold(channel.label)}\n` +
+    `  Model: ${chalk.bold(channel.model)}\n` +
+    `  URL:   ${channel.baseUrl}\n` +
+    `  Key:   ${maskedKey}`;
 }
 
 /** Handle inline subcommands like /profile list, /profile add, /profile delete */
@@ -132,61 +170,61 @@ function HandleSubcommand({
     switch (parsed.action) {
       case 'list': {
         const config = loadProfiles();
-        const profiles = config.profiles || [];
-        if (profiles.length === 0) {
-          onDone('No profiles configured. Use /profile add to create one.', { display: 'system' });
+        const channels = config.channels || [];
+        if (channels.length === 0) {
+          onDone('No model channels configured. Use /profile add to create one.', { display: 'system' });
           return;
         }
-        let out = 'Configured profiles:\n';
-        for (const p of profiles) {
-          const active = p.name === config.activeProfile ? chalk.green(' *') : '';
-          out += `  ${p.name}${active} — ${p.model} @ ${p.baseUrl}\n`;
+        let out = 'Model channels:\n';
+        for (const ch of channels) {
+          const active = ch.model === config.activeModel ? chalk.green(' *') : '';
+          out += `  ${ch.model} (${ch.label})${active} @ ${ch.baseUrl}\n`;
         }
         onDone(out.trim(), { display: 'system' });
         break;
       }
 
       case 'info':
-        // Fall through - will be handled by ShowCurrentProfile via parent logic
+        // Fall through - will be handled by ShowCurrentChannel via parent logic
         break;
 
       case 'add': {
-        if (!parsed.name) {
-          onDone(chalk.yellow('Usage: /profile add <name> <base_url> <api_key> <model>'), { display: 'system' });
+        if (!parsed.model) {
+          onDone(chalk.yellow('Usage: /profile add <model> <label> <base_url> <api_key>'), { display: 'system' });
           return;
         }
         if (parsed.rest.length < 3) {
           onDone(
-            chalk.yellow('Usage: /profile add <name> <base_url> <api_key> <model>\n') +
-            'Example: /profile add local http://localhost:11434/v1 sk-xxx llama3',
+            chalk.yellow('Usage: /profile add <model> <label> <base_url> <api_key>\n') +
+            'Example: /profile add deepseek-r1 DeepSeek https://api.deepseek.com/v1 sk-xxx',
             { display: 'system' }
           );
           return;
         }
-        const newProfile: ProfileType = {
-          name: parsed.name,
-          baseUrl: parsed.rest[0],
-          apiKey: parsed.rest[1],
-          model: parsed.rest[2],
+        const newChannel: ModelChannel = {
+          model: parsed.model,
+          label: parsed.rest[0],
+          baseUrl: parsed.rest[1],
+          apiKey: parsed.rest[2],
         };
-        upsertProfile(newProfile);
-        onDone(`Profile ${chalk.bold(parsed.name)} added/updated.\n` +
-          `  URL:   ${newProfile.baseUrl}\n` +
-          `  Model: ${newProfile.model}\n\n` +
-          `Switch with: /profile ${parsed.name}`, { display: 'system' });
+        upsertChannel(newChannel);
+        onDone(`Channel ${chalk.bold(newChannel.label)} added/updated.\n` +
+          `  Model: ${newChannel.model}\n` +
+          `  URL:   ${newChannel.baseUrl}\n\n` +
+          `Switch with: /profile ${newChannel.model}`, { display: 'system' });
         break;
       }
 
       case 'delete': {
-        if (!parsed.name) {
-          onDone(chalk.yellow('Usage: /profile delete <name>'), { display: 'system' });
+        if (!parsed.model) {
+          onDone(chalk.yellow('Usage: /profile delete <model>'), { display: 'system' });
           return;
         }
-        const ok = deleteProfile(parsed.name);
+        const ok = deleteChannel(parsed.model);
         if (!ok) {
-          onDone(chalk.red(`Cannot delete profile "${parsed.name}" — it's the active profile or doesn't exist.`), { display: 'system' });
+          onDone(chalk.red(`Cannot delete channel "${parsed.model}" — it's the active channel or doesn't exist.`), { display: 'system' });
         } else {
-          onDone(`Profile ${chalk.bold(parsed.name)} deleted.`, { display: 'system' });
+          onDone(`Channel for model ${chalk.bold(parsed.model)} deleted.`, { display: 'system' });
         }
         break;
       }
@@ -199,71 +237,44 @@ function HandleSubcommand({
   return null;
 }
 
-/** Interactive profile selector using the same style as model picker */
-function ProfilePicker({
+/** Interactive model channel selector */
+function ModelChannelPicker({
   onDone,
 }: {
   onDone: (result?: string, options?: { display?: CommandResultDisplay }) => void;
 }) {
   const setAppState = useSetAppState();
-  const mainLoopModel = useAppState(s => s.mainLoopModel);
 
   const config = React.useMemo(() => loadProfiles(), []);
 
-  const profileOptions = React.useMemo(
+  const channelOptions = React.useMemo(
     () =>
-      (config.profiles || []).map(p => ({
-        label: `${p.name}${p.name === config.activeProfile ? ' (current)' : ''}`,
-        value: p.name,
-        description: `${p.model} @ ${p.baseUrl}`,
+      (config.channels || []).map(ch => ({
+        label: `${ch.model} (${ch.label})${ch.model === config.activeModel ? ' (current)' : ''}`,
+        value: ch.model,
+        description: `${ch.baseUrl}`,
       })),
     [config]
   );
 
-  function handleChange(profileName: string) {
-    const profile = (config.profiles || []).find(p => p.name === profileName);
-    if (!profile) {
-      onDone(`Profile "${profileName}" not found.`, { display: 'system' });
+  function handleChange(modelName: string) {
+    const channel = (config.channels || []).find(
+      ch => ch.model.toLowerCase() === modelName.toLowerCase(),
+    );
+    if (!channel) {
+      onDone(`Channel for model "${modelName}" not found.`, { display: 'system' });
       return;
     }
 
-    // Apply the profile
-    setActiveProfile(profileName);
-    setOpenAIProfileOverrides({
-      apiKey: profile.apiKey,
-      baseURL: profile.baseUrl,
-    });
-
-    // Set model via environment variable (original modelMapping.ts picks this up)
-    if (profile.model) {
-      process.env.OPENAI_MODEL = profile.model;
-    }
-
-    // Also update the model to the profile's default
-    setAppState(prev => ({
-      ...prev,
-      mainLoopModel: profile.model,
-      mainLoopModelForSession: null,
-    }));
-
-    const maskedKey = profile.apiKey.length > 8
-      ? `${profile.apiKey.slice(0, 6)}...${profile.apiKey.slice(-4)}`
-      : '****';
-
-    onDone(
-      `Switched to profile ${chalk.bold(profileName)}\n` +
-      `  URL:   ${profile.baseUrl}\n` +
-      `  Model: ${chalk.bold(profile.model)}\n` +
-      `  Key:   ${maskedKey}`,
-      { display: 'system' }
-    );
+    const msg = applyChannelSwitch(channel, setAppState);
+    onDone(msg, { display: 'system' });
   }
 
-  if (profileOptions.length === 0) {
+  if (channelOptions.length === 0) {
     React.useEffect(() => {
       onDone(
-        'No profiles configured yet.\n' +
-        chalk.dim('Use /profile add <name> <url> <key> <model> to add one.'),
+        'No model channels configured yet.\n' +
+        chalk.dim('Use /profile add <model> <label> <url> <key> to add one.'),
         { display: 'system' }
       );
     }, [onDone]);
@@ -272,13 +283,13 @@ function ProfilePicker({
 
   return (
     <Box flexDirection="column">
-      <Text bold color="cyan">Switch API Endpoint Profile</Text>
-      <Text dimColor>Select a profile or press Escape to cancel</Text>
+      <Text bold color="cyan">Select Model Channel</Text>
+      <Text dimColor>Choose a model to switch its provider channel (ESC to cancel)</Text>
       <Box marginTop={1}>
         <Select
-          options={profileOptions}
+          options={channelOptions}
           onChange={handleChange}
-          onCancel={() => onDone('Kept current profile.', { display: 'system' })}
+          onCancel={() => onDone('Kept current channel.', { display: 'system' })}
           layout="compact-vertical"
         />
       </Box>
@@ -289,64 +300,59 @@ function ProfilePicker({
 export const call: LocalJSXCommandCall = async (onDone, _context, args) => {
   args = args?.trim() || '';
 
-  // No arguments → show interactive picker
+  // No arguments → show interactive model channel picker
   if (!args) {
-    return <ProfilePicker onDone={onDone} />;
+    return <ModelChannelPicker onDone={onDone} />;
   }
 
-  // /profile info → show current
+  // /profile info → show current channel
   if (args.toLowerCase() === 'info' || args.toLowerCase() === 'show' || args.toLowerCase() === 'current') {
-    return <ShowCurrentProfile onDone={onDone} />;
+    return <ShowCurrentChannel onDone={onDone} />;
   }
 
-  // /profile list → show all
+  // /profile list → show all channels
   if (args.toLowerCase() === 'list' || args.toLowerCase() === 'ls') {
-    return <ListProfiles onDone={onDone} />;
+    return <ListChannels onDone={onDone} />;
   }
 
-  // Check if it's a direct profile name (switch by name)
+  // Check if it's a subcommand (add, delete)
   const parsed = parseSubcommand(args);
-  if (!parsed) {
-    // Treat arg as a profile name to switch to directly
-    const config = loadProfiles();
-    const targetProfile = (config.profiles || []).find(p => p.name.toLowerCase() === args.toLowerCase());
-
-    if (targetProfile) {
-      // Switch to this profile immediately
-      setActiveProfile(targetProfile.name);
-      setOpenAIProfileOverrides({
-        apiKey: targetProfile.apiKey,
-        baseURL: targetProfile.baseUrl,
-      });
-
-      // Set model via environment variable
-      if (targetProfile.model) {
-        process.env.OPENAI_MODEL = targetProfile.model;
-      }
-
-      // We need to update the model too, but we can't access setAppState outside of React.
-      // Instead, we'll signal that the user should know about the model change.
-      const maskedKey = targetProfile.apiKey.length > 8
-        ? `${targetProfile.apiKey.slice(0, 6)}...${targetProfile.apiKey.slice(-4)}`
-        : '****';
-
-      onDone(
-        `Switched to profile ${chalk.bold(targetProfile.name)}\n` +
-        `  URL:   ${targetProfile.baseUrl}\n` +
-        `  Model: ${chalk.bold(targetProfile.model)}\n` +
-        `  Key:   ${maskedKey}\n\n` +
-        chalk.dim(`Note: Run /model ${targetProfile.model} to also switch the model.`),
-        { display: 'system' }
-      );
-      return null;
-    } else {
-      onDone(chalk.red(`Profile "${args}" not found. Use /profile list to see available profiles.`), {
-        display: 'system',
-      });
-      return null;
-    }
+  if (parsed) {
+    return <HandleSubcommand args={args} onDone={onDone} />;
   }
 
-  // Subcommands: add, delete
-  return <HandleSubcommand args={args} onDone={onDone} />;
+  // Treat arg as a model name to switch to directly
+  const config = loadProfiles();
+  const targetChannel = (config.channels || []).find(
+    ch => ch.model.toLowerCase() === args.toLowerCase() || ch.label.toLowerCase() === args.toLowerCase(),
+  );
+
+  if (targetChannel) {
+    // We need setAppState for the model switch, but we're outside React.
+    // Use a wrapper component to get access to setAppState.
+    return <DirectChannelSwitch channel={targetChannel} onDone={onDone} />;
+  } else {
+    onDone(chalk.red(`Channel for model "${args}" not found. Use /profile list to see available channels.`), {
+      display: 'system',
+    });
+    return null;
+  }
 };
+
+/** Helper component for direct model-name switching (needs setAppState) */
+function DirectChannelSwitch({
+  channel,
+  onDone,
+}: {
+  channel: ModelChannel;
+  onDone: (result?: string, options?: { display?: CommandResultDisplay }) => void;
+}) {
+  const setAppState = useSetAppState();
+
+  React.useEffect(() => {
+    const msg = applyChannelSwitch(channel, setAppState);
+    onDone(msg, { display: 'system' });
+  }, [channel, onDone, setAppState]);
+
+  return null;
+}
