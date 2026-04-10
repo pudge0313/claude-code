@@ -11,3 +11,4 @@ coverage
 src/utils/vendor/
 _gen_map.py
 test.txt
+.workbuddy/
