@@ -17,19 +17,12 @@
 
 type PrivacyLevel = 'default' | 'no-telemetry' | 'essential-traffic'
 
-function isEnterpriseSafeMode(): boolean {
-  return process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0'
-}
-
 export function getPrivacyLevel(): PrivacyLevel {
   if (process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC) {
     return 'essential-traffic'
   }
   if (process.env.DISABLE_TELEMETRY) {
     return 'no-telemetry'
-  }
-  if (isEnterpriseSafeMode()) {
-    return 'essential-traffic'
   }
   return 'default'
 }

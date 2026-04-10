@@ -103,9 +103,6 @@ export function initializeRemoteManagedSettingsLoadingPromise(): void {
  * Uses the OAuth config base API URL
  */
 function getRemoteManagedSettingsEndpoint() {
-  if (process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
-    throw new Error('Remote managed settings disabled in enterprise-safe mode')
-  }
   return `${getOauthConfig().BASE_API_URL}/api/claude_code/settings`
 }
 
@@ -145,9 +142,6 @@ export function computeChecksumFromSettings(settings: SettingsJson): string {
  * Used to determine if they should wait for remote settings to load
  */
 export function isEligibleForRemoteManagedSettings(): boolean {
-  if (process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
-    return false
-  }
   return isRemoteManagedSettingsEligible()
 }
 

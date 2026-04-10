@@ -25,7 +25,7 @@ import {
   readFileLines,
   writeFileLines,
 } from './shellConfig.js'
-import { isEssentialTrafficOnly } from './privacyLevel.js'
+import { jsonParse } from './slowOperations.js'
 
 const GCS_BUCKET_URL =
   'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases'
@@ -319,10 +319,6 @@ export async function checkGlobalInstallPermissions(): Promise<{
 export async function getLatestVersion(
   channel: ReleaseChannel,
 ): Promise<string | null> {
-  if (isEssentialTrafficOnly() || process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
-    return null
-  }
-
   const npmTag = channel === 'stable' ? 'stable' : 'latest'
 
   // Run from home directory to avoid reading project-level .npmrc
@@ -388,10 +384,6 @@ export async function getNpmDistTags(): Promise<NpmDistTags> {
 export async function getLatestVersionFromGcs(
   channel: ReleaseChannel,
 ): Promise<string | null> {
-  if (isEssentialTrafficOnly() || process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
-    return null
-  }
-
   try {
     const response = await axios.get(`${GCS_BUCKET_URL}/${channel}`, {
       timeout: 5000,
@@ -409,10 +401,6 @@ export async function getLatestVersionFromGcs(
  * Fetches both latest and stable channel pointers.
  */
 export async function getGcsDistTags(): Promise<NpmDistTags> {
-  if (isEssentialTrafficOnly() || process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
-    return { latest: null, stable: null }
-  }
-
   const [latest, stable] = await Promise.all([
     getLatestVersionFromGcs('latest'),
     getLatestVersionFromGcs('stable'),
@@ -431,10 +419,6 @@ export async function getGcsDistTags(): Promise<NpmDistTags> {
  * 3. This prevents rollback from listing versions that don't have native binaries
  */
 export async function getVersionHistory(limit: number): Promise<string[]> {
-  if (isEssentialTrafficOnly() || process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
-    return []
-  }
-
   if (process.env.USER_TYPE !== 'ant') {
     return []
   }

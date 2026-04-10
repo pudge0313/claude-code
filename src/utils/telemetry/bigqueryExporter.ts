@@ -17,7 +17,7 @@ import { errorMessage, toError } from '../errors.js'
 import { getAuthHeaders } from '../http.js'
 import { logError } from '../log.js'
 import { jsonStringify } from '../slowOperations.js'
-import { isEssentialTrafficOnly } from '../privacyLevel.js'
+import { getClaudeCodeUserAgent } from '../userAgent.js'
 
 type DataPoint = {
   attributes: Record<string, string>
@@ -89,11 +89,6 @@ export class BigQueryMetricsExporter implements PushMetricExporter {
     resultCallback: (result: ExportResult) => void,
   ): Promise<void> {
     try {
-      if (isEssentialTrafficOnly() || process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
-        resultCallback({ code: ExportResultCode.SUCCESS })
-        return
-      }
-
       // Skip if trust not established in interactive mode
       // This prevents triggering apiKeyHelper before trust dialog
       const hasTrust =

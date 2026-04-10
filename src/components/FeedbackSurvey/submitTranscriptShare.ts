@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { readFile, stat } from 'fs/promises'
 import type { Message } from '../../types/message.js'
-import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
+import { checkAndRefreshOAuthTokenIfNeeded } from '../../utils/auth.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
 import { getAuthHeaders, getUserAgent } from '../../utils/http.js'
@@ -31,10 +31,6 @@ export async function submitTranscriptShare(
   trigger: TranscriptShareTrigger,
   appearanceId: string,
 ): Promise<TranscriptShareResult> {
-  if (isEssentialTrafficOnly()) {
-    return { success: false }
-  }
-
   try {
     logForDebugging('Collecting transcript for sharing', { level: 'info' })
 

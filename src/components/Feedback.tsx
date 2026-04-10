@@ -524,7 +524,7 @@ async function submitFeedback(data: FeedbackData, signal?: AbortSignal): Promise
   feedbackId?: string;
   isZdrOrg?: boolean;
 }> {
-  if (isEssentialTrafficOnly() || process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
+  if (isEssentialTrafficOnly()) {
     return {
       success: false
     };

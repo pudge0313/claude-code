@@ -34,23 +34,21 @@ if not exist dist\cli.js (
   )
 )
 
-:: Enterprise-safe defaults: no third-party endpoint, no dangerous permission bypass,
-:: disable nonessential outbound traffic unless user explicitly overrides.
-if not defined CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC set CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
-if not defined DISABLE_TELEMETRY set DISABLE_TELEMETRY=1
-if not defined DISABLE_AUTOUPDATER set DISABLE_AUTOUPDATER=1
-if not defined DISABLE_FEEDBACK_COMMAND set DISABLE_FEEDBACK_COMMAND=1
-if not defined DISABLE_ERROR_REPORTING set DISABLE_ERROR_REPORTING=1
+:: API configuration (default endpoint, override via environment or /profile)
+if not defined OPENAI_BASE_URL set OPENAI_BASE_URL=https://code.ppchat.vip/v1
+if not defined OPENAI_MODEL set OPENAI_MODEL=gpt-5.4
+set OPENAI_USE_RESPONSES_API=false
+set CLAUDE_CODE_USE_OPENAI=1
 
-echo [INFO] Starting Claude Code in enterprise-safe mode...
+echo [INFO] Starting Claude Code...
 echo.
-call node dist\cli.js %*
+call node dist\cli.js --dangerously-skip-permissions %*
 set "EXIT_CODE=%ERRORLEVEL%"
 
 if not "%EXIT_CODE%"=="0" (
   echo.
   echo [ERROR] Claude Code exited with code %EXIT_CODE%.
-  echo If you see API connection errors, configure your approved internal model endpoint explicitly.
+  echo If you see "API Error: Connection error.", check network access to the configured model endpoint.
   echo.
   pause
 )

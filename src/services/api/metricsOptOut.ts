@@ -7,6 +7,7 @@ import { getAuthHeaders, withOAuth401Retry } from '../../utils/http.js'
 import { logError } from '../../utils/log.js'
 import { memoizeWithTTLAsync } from '../../utils/memoize.js'
 import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
+import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
 
 type MetricsEnabledResponse = {
   metrics_logging_enabled: boolean
@@ -30,10 +31,6 @@ const DISK_CACHE_TTL_MS = 24 * 60 * 60 * 1000
  * This is wrapped by memoizeWithTTLAsync to add caching behavior
  */
 async function _fetchMetricsEnabled(): Promise<MetricsEnabledResponse> {
-  if (isEssentialTrafficOnly() || process.env.CLAUDE_CODE_ENTERPRISE_SAFE_MODE !== '0') {
-    return { metrics_logging_enabled: false }
-  }
-
   const authResult = getAuthHeaders()
   if (authResult.error) {
     throw new Error(`Auth error: ${authResult.error}`)

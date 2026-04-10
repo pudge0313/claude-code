@@ -48,7 +48,7 @@
     "test": "bun test",
     "check:unused": "knip-bun",
     "health": "bun run scripts/health-check.ts",
-    "postinstall": "node -e \"console.log('Skipping automatic ripgrep download in enterprise-safe mode. Install ripgrep manually or run bun run scripts/download-ripgrep.ts when explicitly approved.')\"",
+    "postinstall": "node dist/download-ripgrep.js || bun run scripts/download-ripgrep.ts || true",
     "docs:dev": "npx mintlify dev"
   },
   "dependencies": {},
